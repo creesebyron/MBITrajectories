@@ -1,0 +1,168 @@
+library(tidyverse)
+library(glmmTMB)
+library(DHARMa)
+
+# Load data
+
+mbi <- read_rds("./Data/Analytical Cohort/AnalyticalData_MBIProxy.rds")
+
+
+#### MBI PROXY #####
+##################
+
+# Define common formula parts 
+covars <- "SEX + EDU + PHQCat + BMIcat + DropOut"
+random_effect <- "(1 | ParticipantId)"
+interaction_base <- function(order, sci_var = "SCI3.3") {
+  sprintf("poly(AgeC, %s)*%s", order, sci_var)
+}
+
+#  Create formulas 
+make_formula <- function(order = 2, outcome = "MBIITotal", sci_var = "SCI3.3" , apoe = TRUE) {
+  interaction_term <- interaction_base(order, sci_var)
+  rhs <- paste(interaction_term, covars, if (apoe) "APOEbin", random_effect, sep = " + ")
+  as.formula(paste(outcome, "~", rhs))
+}
+
+make_ziformula <- function(order = 2, sci_var = "SCI3.3", apoe = TRUE) {
+  zi_terms <- c(interaction_base(order, sci_var), covars)
+  if (apoe) zi_terms <- c(zi_terms, "APOEbin")
+  as.formula(paste("~", paste(zi_terms, collapse = " + ")))
+}
+
+# Fit and evaluate models
+fit_model <- function(formula, mbi, ziformula = ~1, control = glmmTMBControl()) {
+  model <- glmmTMB(formula, data = mbi, family = nbinom2, ziformula = ziformula)
+  sim <- simulateResiduals(model)
+  list(
+    model = model,
+    summary = summary(model),
+    residuals = sim,
+    outliers = testOutliers(sim, type = "bootstrap"),
+    zi_test = testZeroInflation(sim),
+    dispersion = testDispersion(sim)
+  )
+}
+
+# Fit models, start with cubic zi model as per self analysis
+
+form_cub <- make_formula(order = 3, sci_var = "SCI3.3")
+ziform_cub <- make_ziformula(order = 3, sci_var = "SCI3.3") 
+
+# Fit cubic ZI model
+results_zi_cub_full <- fit_model(form_cub, mbi, ziformula = ziform_cub) # good fit
+results_zi_cub_min <- fit_model(form_cub, mbi, ziformula = ~1) 
+
+# Compare models
+
+AIC(results_zi_cub_full$model, results_zi_cub_min$model)
+BIC(results_zi_cub_full$model, results_zi_cub_min$model)
+anova(results_zi_cub_full$model, results_zi_cub_min$model)
+
+# Stratified by APOE 
+mbi_apoe_list <- list(
+  apoe0 = mbi %>% filter(APOEbin == 0),
+  apoe1 = mbi %>% filter(APOEbin == 1)
+)
+
+form_strat <- make_formula(order = 3, apoe = FALSE)
+ziform_strat <- make_ziformula(order = 3, apoe = FALSE)
+
+results_strat_models <- lapply(mbi_apoe_list, function(df) {
+  fit_model(form_strat, df, ziformula = ziform_strat)
+})
+
+# Stratified models result in a convergence problem so simplifying the model to remove the ZI term
+
+# NB adding a control function as below did not help the model converge with the full ZI term
+#convergence<- glmmTMBControl(optCtrl=list(iter.max = 3000 , optimizer=optim))
+
+results_strat_models_min <- lapply(mbi_apoe_list, function(df) {
+  fit_model(form_strat, df, ziformula = ~1)
+})
+
+# Interaction model 
+form_interaction <- as.formula(paste(
+  "MBIITotal ~ poly(AgeC, 3)*SCI3.3*APOEbin +", covars, "+", random_effect
+))
+
+results_int <- fit_model(form_interaction, mbi, ziformula = ~1)
+
+
+# Compare the interaction model with the no interaction model 
+
+AIC(results_int$model, results_zi_cub_min$model, results_zi_cub_full$model)
+
+# There is no statistical interaction for proxy so just present the full model, fit indices also suggest this one is the better fit
+
+write_list <- list(
+  results_strat_models = results_strat_models,
+  results_int = results_int,
+  results_zi_cub_min = results_zi_cub_min,
+  results_zi_cub_full = results_zi_cub_full
+)
+
+lapply(names(write_list), function(name) {
+  saveRDS(write_list[[name]], file = paste0("./Outputs/", name, "_proxy.rds"))
+})
+
+
+
+##### EXPLORATORY ANALYSIS #####
+###############################
+
+# Use the final model 
+
+# AGE >=65
+
+# AGE >=65
+
+mbi65 <- mbi %>% filter(AgeBL >=65)
+
+
+results_zi_cub_full_65 <- fit_model(make_formula(order = 3, apoe = TRUE), mbi65, ziformula =  make_ziformula(order = 3, apoe = TRUE))
+
+# Write out results
+
+write_list <- list(
+  results_zi_cub_full_65 = results_zi_cub_full_65
+)
+
+lapply(names(write_list), function(name) {
+  saveRDS(write_list[[name]], file = paste0("./Outputs/", name, "_proxy.rds"))
+})
+
+
+# SCI 3.6 
+
+# Fit models 
+
+results_zi_cub_full_sci3.6 <- fit_model(make_formula(order = 3,sci_var = "SCI3.6", apoe = TRUE), mbi, ziformula =  make_ziformula(order = 3,sci_var = "SCI3.6", apoe = TRUE))
+
+saveRDS(results_cub_proxysci3.6, "./Outputs/results_cub_sci3.6_proxy.rds")
+
+
+# MBI DOMAINS, set zi formula to ~1 so that models run for all domains
+
+convergence<- glmmTMBControl(optCtrl=list(iter.max = 3000 , optimizer=optim))
+
+
+domain_list <- paste0("MBIITotD", 1:5)
+
+# Create a named list to store results
+results_domains_proxy <- lapply(domain_list, function(outcome_var) {
+  # Build formulas for each outcome
+  form <- make_formula(order = 3, sci_var = "SCI3.3", outcome = outcome_var)
+  ziform <- make_ziformula(order = 3, sci_var = "SCI3.3")
+  
+  # Fit model and return results
+  fit_model(formula = form, mbi = mbi, ziformula = ~1, control = convergence)
+})
+
+# Name the list by outcome
+names(results_domains_proxy) <- domain_list
+
+# convergence issues
+
+saveRDS(results_domains_proxy, "./Outputs/results_domains_min_proxy.rds")
+

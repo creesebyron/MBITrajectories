@@ -1,0 +1,27 @@
+{
+    "id": "A950BDDF",
+    "path": "C:/Users/bbbc018/OneDrive - Brunel University London/Projects/2. Live/MBI in PROTECT/Longitudinal MBI/Scripts/03_clean_demographics.R",
+    "project_path": "Scripts/03_clean_demographics.R",
+    "type": "r_source",
+    "hash": "2260573933",
+    "contents": "",
+    "dirty": false,
+    "created": 1754317480105.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "tempName": "Untitled1",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "34,35",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1752775929,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1752775929,
+    "read_only": false,
+    "read_only_alternatives": []
+}

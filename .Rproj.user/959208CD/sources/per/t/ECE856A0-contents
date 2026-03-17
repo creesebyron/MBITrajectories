@@ -1,0 +1,72 @@
+library(tidyverse)
+library(glmmTMB)
+library(DHARMa)
+
+# Load data
+
+cogn <- read_rds("./Data/Analytical Cohort/AnalyticalData_Cognitive.rds")
+
+
+# Define formula parts 
+
+covars <- "SEX + EDU + EMPLOY +  PHQCat + BMIcat + DropOut + APOEbin+ NumRepeats"
+random_effect <- "(1 | ParticipantId)"
+interaction_base <- "poly(AgeC, %s)*SCI3.3"
+
+#  Create formulas 
+make_formula <- function(order = 2, outcome = "G", apoe = TRUE) {
+  interaction_term <- sprintf(interaction_base, order)
+  rhs <- paste(interaction_term, covars, if (apoe) "APOEbin", random_effect, sep = " + ")
+  as.formula(paste(outcome, "~", rhs))
+}
+
+# Fit and evaluate models
+fit_model <- function(formula, data, ziformula = ~1) {
+  model <- glmmTMB(formula, data = cogn, family = gaussian)
+  sim <- simulateResiduals(model)
+  list(
+    model = model,
+    summary = summary(model),
+    residuals = sim,
+    outliers = testOutliers(sim, type = "bootstrap"),
+    zi_test = testZeroInflation(sim),
+    dispersion = testDispersion(sim)
+  )
+}
+
+# Fit models 
+lin_form_quad <- make_formula(order = 2)
+lin_form_cub <- make_formula(order = 3)
+
+# Fit NB model, quadratic
+results_g_quad <- fit_model(lin_form_quad, cogn)
+# Fit ZI model, cubic
+results_g_cub <- fit_model(lin_form_cub, cogn)
+
+
+# Compare models 
+AIC(results_g_cub$model, results_g_quad$model)
+BIC(results_g_cub$model, results_g_quad$model)
+anova(results_g_cub$model, results_g_quad$model)
+
+# Interaction term
+
+form_interaction_quad <- as.formula(paste(
+  "G ~ poly(AgeC, 2)*SCI3.3*APOEbin +", covars, "+", random_effect
+))
+
+results_int_cog <- fit_model(form_interaction_quad, cogn)
+
+# Three way nteraction term does not improve model fit, stick with the quadratic term model
+
+# write out results
+
+write_list <- list(
+  results_g_cub = results_g_cub,
+  results_g_quad = results_g_quad
+)
+
+lapply(names(write_list), function(name) {
+  saveRDS(write_list[[name]], file = paste0("./Outputs/", name, ".rds"))
+})
+

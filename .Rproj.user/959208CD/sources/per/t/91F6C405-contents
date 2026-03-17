@@ -1,0 +1,390 @@
+library(ggplot2)
+library(tidyverse)
+
+# Load model output and data
+
+mod_results_self <- readRDS("./Outputs/results_int_self_self.rds")
+mod_results_proxy <- readRDS("./Outputs/results_cub_proxy_proxy.rds")
+mod_results_cog <- readRDS("./Outputs/results_g_quad.rds")
+mbi <- readRDS("./Data/Analytical Cohort/AnalyticalData_MBISelf.rds")
+mbii <- readRDS("./Data/Analytical Cohort/AnalyticalData_MBIProxy.rds")
+cog <- readRDS("./Data/Analytical Cohort/AnalyticalData_Cognitive.rds")
+
+##### SELF #####
+################
+
+# Visualise the data
+
+# Get modal levels
+get_mode <- function(x) {
+  names(which.max(table(x)))
+}
+
+summary_stats_mbi <- mbi %>%
+  summarize(
+    SEX    = get_mode(SEX),
+    EDU    = get_mode(EDU),
+    EMPLOY = get_mode(EMPLOY),
+    BMIcat = get_mode(BMIcat),
+    PHQCat = mean(PHQCat),
+    DropOut = mean(DropOut, na.rm = TRUE)
+  )
+
+
+
+newdata <- expand.grid(
+  AgeC = seq(-15, 15, length.out = 100),
+  SCI3.3 = c(0, 1),
+  APOEbin = c(0, 1),
+  SEX = summary_stats_mbi$SEX,
+  EDU = summary_stats_mbi$EDU,
+  EMPLOY = summary_stats_mbi$EMPLOY,
+  PHQCat = summary_stats_mbi$PHQCat,
+  BMIcat = summary_stats_mbi$BMIcat,
+  DropOut = summary_stats_mbi$DropOut,
+  ParticipantId = NA
+)
+
+
+pred_out <- predict(mod_results_self$model,
+                    newdata = newdata,
+                    type = "response",
+                    se.fit = TRUE,
+                    allow.new.levels = TRUE)
+
+# Add confidence intervals
+
+newdata$predicted <- pred_out$fit
+newdata$se <- pred_out$se.fit
+newdata$LCI <- newdata$predicted - 1.96 * newdata$se
+newdata$UCI <- newdata$predicted + 1.96 * newdata$se
+
+
+mbis_plot <- ggplot(newdata, aes(x = AgeC, y = predicted,
+                    color = factor(SCI3.3),
+                    linetype = factor(APOEbin))) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = LCI, ymax = UCI, fill = factor(SCI3.3), group = interaction(SCI3.3, APOEbin)),
+              alpha = 0.2, color = NA) +
+  labs(x = "Mean Centered Age (Years)",
+       y = "Predicted MBI-C Total Score (Self Rated)",
+       color = "SCI Group",
+       fill = "SCI Group",
+       linetype = "APOE ε4 carrier") +
+  theme_minimal() +
+  scale_color_manual(
+    values = c("gray30", "steelblue"),
+    labels = c("No SCI", "SCI")
+  ) +
+  scale_fill_manual(
+    values = c("gray30", "steelblue"),
+    labels = c("No SCI", "SCI")
+  ) +
+  theme(legend.position = "right")
+
+# Save plot
+
+ggsave("./Plots/mbis_plot_a5_highres.tiff", plot = mbis_plot, width = 8.27, height = 5.83, dpi = 600, units = "in", compression = "lzw", bg = "white")
+
+##### PROXY #####
+#################
+
+
+# Visualise the data
+
+
+# Visualise the data
+
+summary_stats <- mbi %>%
+  summarize(
+    SEX    = get_mode(SEX),
+    EDU    = get_mode(EDU),
+    EMPLOY = get_mode(EMPLOY),
+    BMIcat = get_mode(BMIcat),
+    PHQCat = mean(PHQCat, na.rm = TRUE),
+    DropOut = mean(DropOut, na.rm = TRUE)
+  )
+
+
+
+
+newdata_proxy <- expand.grid(
+  AgeC = seq(-15, 15, length.out = 100),
+  SCI3.3 = c(0, 1),
+  APOEbin = c(0, 1),
+  SEX = summary_stats$SEX,
+  EDU = summary_stats$EDU,
+  EMPLOY = summary_stats$EMPLOY,
+  PHQCat = summary_stats$PHQCat,
+  BMIcat = summary_stats$BMIcat,
+  DropOut = summary_stats$DropOut,
+  ParticipantId = NA
+)
+
+
+pred_out <- predict(mod_results_proxy$model,
+                    newdata = newdata_proxy,
+                    type = "response",
+                    se.fit = TRUE,
+                    allow.new.levels = TRUE)
+
+# Add confidence intervals
+
+newdata_proxy$predicted <- pred_out$fit
+newdata_proxy$se <- pred_out$se.fit
+newdata_proxy$LCI <- newdata_proxy$predicted - 1.96 * newdata_proxy$se
+newdata_proxy$UCI <- newdata_proxy$predicted + 1.96 * newdata_proxy$se
+
+
+mbii_plot <- ggplot(newdata_proxy, aes(x = AgeC, y = predicted,
+                                 color = factor(SCI3.3),
+                                 linetype = factor(APOEbin))) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = LCI, ymax = UCI, fill = factor(SCI3.3), group = interaction(SCI3.3, APOEbin)),
+              alpha = 0.2, color = NA) +
+  labs(x = "Mean Centered Age (Years)",
+       y = "Predicted MBI-C Total Score (Proxy Rated)",
+       color = "SCI Group",
+       fill = "SCI Group",
+       linetype = "APOE ε4 carrier") +
+  theme_minimal() +
+  scale_color_manual(
+    values = c("gray30", "steelblue"),
+    labels = c("No SCI", "SCI")
+  ) +
+  scale_fill_manual(
+    values = c("gray30", "steelblue"),
+    labels = c("No SCI", "SCI")
+  ) +
+  theme(legend.position = "right")
+
+# Save plot
+
+ggsave("./Plots/mbii_plot_a5_highres.tiff", plot = mbii_plot, width = 8.27, height = 5.83, dpi = 600, units = "in", compression = "lzw", bg = "white")
+
+##### COGNITION #####
+#####################
+
+
+# Visualise the data
+
+# Get modal levels
+
+summary_stats_cog <- cog %>%
+  summarize(
+    SEX    = get_mode(SEX),
+    EDU    = get_mode(EDU),
+    EMPLOY = get_mode(EMPLOY),
+    BMIcat = get_mode(BMIcat),
+    PHQCat = mean(PHQCat, na.rm = TRUE),
+    DropOut = mean(DropOut, na.rm = TRUE),
+    NumRepeats = mean(NumRepeats, na.rm = TRUE)
+  )
+
+
+
+newdata_cog <- expand.grid(
+  AgeC = seq(-15, 15, length.out = 100),
+  SCI3.3 = c(0, 1),
+  APOEbin = c(0, 1),
+  SEX = summary_stats_cog$SEX,
+  EDU = summary_stats_cog$EDU,
+  EMPLOY = summary_stats_cog$EMPLOY,
+  PHQCat = summary_stats_cog$PHQCat,
+  BMIcat = summary_stats_cog$BMIcat,
+  DropOut = summary_stats_cog$DropOut,
+  NumRepeats = summary_stats_cog$NumRepeats,
+  ParticipantId = NA
+)
+
+
+pred_out_cog <- predict(mod_results_cog$model,
+                    newdata = newdata_cog,
+                    type = "response",
+                    se.fit = TRUE,
+                    allow.new.levels = TRUE)
+
+# Add confidence intervals
+
+newdata_cog$predicted <- pred_out_cog$fit
+newdata_cog$se <- pred_out_cog$se.fit
+newdata_cog$LCI <- newdata_cog$predicted - 1.96 * newdata_cog$se
+newdata_cog$UCI <- newdata_cog$predicted + 1.96 * newdata_cog$se
+
+
+cog_plot <- ggplot(newdata, aes(x = AgeC, y = predicted,
+                                 color = factor(SCI3.3),
+                                 linetype = factor(APOEbin))) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = LCI, ymax = UCI, fill = factor(SCI3.3), group = interaction(SCI3.3, APOEbin)),
+              alpha = 0.2, color = NA) +
+  labs(x = "Mean Centered Age (Years)",
+       y = "Predicted Cognitive Composite Score",
+       color = "SCI Group",
+       fill = "SCI Group",
+       linetype = "APOE ε4 carrier") +
+  theme_minimal() +
+  scale_color_manual(
+    values = c("gray30", "steelblue"),
+    labels = c("No SCI", "SCI")
+  ) +
+  scale_fill_manual(
+    values = c("gray30", "steelblue"),
+    labels = c("No SCI", "SCI")
+  ) +
+  theme(legend.position = "right")
+
+# Save plot
+
+ggsave("./Plots/cog_plot_a5_highres.tiff", plot = cog_plot, width = 8.27, height = 5.83, dpi = 600, units = "in", compression = "lzw", bg = "white")
+
+# Dual plot of cognition and MBI
+
+# Plot lines by SCI 
+
+newdata_dualmbi <- expand.grid(
+  AgeC = seq(-15, 15, length.out = 100),
+  SCI3.3 = c(0, 1),
+  APOEbin = mean(mbi$APOEbin),
+  SEX = summary_stats_mbi$SEX,
+  EDU = summary_stats_mbi$EDU,
+  EMPLOY = summary_stats_mbi$EMPLOY,
+  PHQCat = summary_stats_mbi$PHQCat,
+  BMIcat = summary_stats_mbi$BMIcat,
+  DropOut = summary_stats_mbi$DropOut,
+  ParticipantId = NA
+)
+
+pred_out_dualmbi <- predict(mod_results_self$model,
+                    newdata = newdata_dualmbi,
+                    type = "response",
+                    se.fit = TRUE,
+                    allow.new.levels = TRUE)
+
+# Add confidence intervals
+
+newdata_dualmbi$predicted <- pred_out_dualmbi$fit
+newdata_dualmbi$se <- pred_out_dualmbi$se.fit
+newdata_dualmbi$LCI <- newdata_dualmbi$predicted - 1.96 * newdata_dualmbi$se
+newdata_dualmbi$UCI <- newdata_dualmbi$predicted + 1.96 * newdata_dualmbi$se
+
+
+newdata_dualcog <- expand.grid(
+  AgeC = seq(-15, 15, length.out = 100),
+  SCI3.3 = c(0, 1),
+  APOEbin = mean(mbi$APOEbin),
+  SEX = summary_stats_cog$SEX,
+  EDU = summary_stats_cog$EDU,
+  EMPLOY = summary_stats_cog$EMPLOY,
+  PHQCat = summary_stats_cog$PHQCat,
+  BMIcat = summary_stats_cog$BMIcat,
+  DropOut = summary_stats_cog$DropOut,
+  NumRepeats = summary_stats_cog$NumRepeats,
+  ParticipantId = NA
+)
+
+pred_out_dualcog <- predict(mod_results_cog$model,
+                            newdata = newdata_dualcog,
+                            type = "response",
+                            se.fit = TRUE,
+                            allow.new.levels = TRUE)
+
+# Add confidence intervals
+
+newdata_dualcog$predicted <- pred_out_dualcog$fit
+newdata_dualcog$se <- pred_out_dualcog$se.fit
+newdata_dualcog$LCI <- newdata_dualcog$predicted - 1.96 * newdata_dualcog$se
+newdata_dualcog$UCI <- newdata_dualcog$predicted + 1.96 * newdata_dualcog$se
+
+
+
+# Step 1: Make sure SCI is a factor
+newdata_dualmbi$SCI3.3 <- factor(newdata_dualmbi$SCI3.3)
+newdata_dualcog$SCI3.3 <- factor(newdata_dualcog$SCI3.3)
+
+# Step 2: Get the range of predicted values
+range_mbi <- range(newdata_dualmbi$predicted, na.rm = TRUE)
+range_cog <- range(newdata_dualcog$predicted, na.rm = TRUE)
+
+# Step 3: Define transformation functions
+scale_factor <- diff(range_mbi) / diff(range_cog)
+offset <- range_mbi[1] - range_cog[1] * scale_factor
+
+rescale_cog <- function(x) x * scale_factor + offset
+inv_rescale_cog <- function(x) (x - offset) / scale_factor
+
+# Step 4: Create unified dataset
+
+# MBI-C data: no transformation needed
+mbi_df <- newdata_dualmbi %>%
+  transmute(
+    AgeC,
+    SCI3.3,
+    pred = predicted,
+    lci = LCI,
+    uci = UCI,
+    plot_type = "MBI-C"
+  )
+
+# Cognition data: rescale predicted values
+cog_df <- newdata_dualcog %>%
+  transmute(
+    AgeC,
+    SCI3.3,
+    pred = rescale_cog(predicted),
+    lci = rescale_cog(LCI),
+    uci = rescale_cog(UCI),
+    plot_type = "Cognition"
+  )
+
+# Combine both
+plot_df <- bind_rows(mbi_df, cog_df)
+
+# Step 5: Plot
+dualplot <- ggplot(plot_df, aes(x = AgeC, y = pred, group = interaction(SCI3.3, plot_type))) +
+  
+  # Confidence ribbon
+  geom_ribbon(aes(ymin = lci, ymax = uci, fill = plot_type), alpha = 0.2) +
+  
+  # Lines
+  geom_line(aes(color = plot_type, linetype = SCI3.3), size = 1) +
+  
+  # Primary and secondary axes
+  scale_y_continuous(
+    name = "Predicted MBI-C Self Total",
+    sec.axis = sec_axis(~inv_rescale_cog(.), name = "Predicted Cognitive Composite")
+  ) +
+  
+  # Manual colors
+  scale_color_manual(
+    values = c("MBI-C" = "grey30", "Cognition" = "steelblue"),
+    labels = c("Cognitive Composite", "MBI-C"),
+    name = "Outcome"
+  ) +
+  
+  scale_fill_manual(
+    values = c("MBI-C" = "grey30", "Cognition" = "steelblue"),
+    labels = c("Cognitive Composite","MBI-C" ),
+    name = "Outcome"
+  ) +
+  
+  # Line type for SCI status
+  scale_linetype_manual(
+    values = c("0" = "solid", "1" = "dotted"),
+    labels = c("No SCI", "SCI"),
+    name = "SCI Status"
+  ) +
+  
+  theme_minimal(base_size = 14) +
+  labs(x = "Grane Mean Centered Age") +
+  theme(
+    axis.title.y.left = element_text(color = "grey30"),
+    axis.title.y.right = element_text(color = "steelblue"),
+    legend.position = "top"
+  )
+
+# Save plot
+
+ggsave("./Plots/dual_plot_a5_highres.tiff", plot = dualplot, width = 8.27, height = 5.83, dpi = 600, units = "in", compression = "lzw", bg = "white")
+
+

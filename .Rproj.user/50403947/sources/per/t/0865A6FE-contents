@@ -1,0 +1,214 @@
+library(tidyverse)
+library(glmmTMB)
+library(DHARMa)
+
+# Load data
+
+mbi <- read_rds("./Data/Analytical Cohort/AnalyticalData_MBISelf.rds")
+
+
+#### MBI SELF #####
+##################
+
+# Define common formula parts 
+covars <- "SEX + EDU + PHQCat + BMIcat + DropOut"
+covarsnoPHQ <- "SEX + EDU + BMIcat + DropOut"
+random_effect <- "(1 | ParticipantId)"
+interaction_base <- function(order, sci_var = "SCI3.3") {
+  sprintf("poly(AgeC, %s)*%s", order, sci_var)
+}
+
+
+#  Create formulas 
+make_formula <- function(order = 2, sci_var = "SCI3.3", outcome = "mbiSTotal", apoe = TRUE) {
+  interaction_term <- interaction_base(order, sci_var)
+  rhs <- paste(interaction_term, covarsnoPHQ, if (apoe) "APOEbin", random_effect, sep = " + ")
+  as.formula(paste(outcome, "~", rhs))
+}
+
+make_ziformula <- function(order = 2, sci_var = "SCI3.3", apoe = TRUE) {
+  zi_terms <- c(interaction_base(order, sci_var), covars)
+  if (apoe) zi_terms <- c(zi_terms, "APOEbin")
+  as.formula(paste("~", paste(zi_terms, collapse = " + ")))
+}
+
+# Fit and evaluate models
+fit_model <- function(formula, mbi, ziformula = ~1, control= glmmTMBControl()) {
+  model <- glmmTMB(formula, data = mbi, family = nbinom2, ziformula = ziformula)
+  sim <- simulateResiduals(model)
+  list(
+    model = model,
+    summary = summary(model),
+    residuals = sim,
+    outliers = testOutliers(sim, type = "bootstrap"),
+    zi_test = testZeroInflation(sim),
+    dispersion = testDispersion(sim)
+  )
+}
+
+# Fit models 
+form_quad <- make_formula(order = 2, sci_var = "SCI3.3")
+form_cub <- make_formula(order = 3, sci_var = "SCI3.3")
+ziform_cub <- make_ziformula(order = 3, sci_var = "SCI3.3")
+
+# Fit NB model
+results_nb_quad <- fit_model(form_quad, mbi)
+# Fit ZI model
+results_nb_cub <- fit_model(form_quad, mbi)
+# Fit reduced ZI model
+results_zi_cub_min <- fit_model(form_cub, mbi, ziformula = ~1)
+# Fit cubic ZI model
+results_zi_cub_full <- fit_model(form_cub, mbi, ziformula = ziform_cub)
+
+
+# Compare models 
+AIC(results_nb_quad$model, results_nb_cub$model, results_zi_cub_min$model, results_zi_cub_full$model)
+BIC(results_zi_cub_min$model, results_zi_cub_full$model)
+anova(results_zi_cub_min$model, results_zi_cub_full$model)
+
+# Stratified by APOE 
+mbi_apoe_list <- list(
+  apoe0 = mbi %>% filter(APOEbin == 0),
+  apoe1 = mbi %>% filter(APOEbin == 1)
+)
+
+form_strat <- make_formula(order = 3, apoe = FALSE)
+ziform_strat <- make_ziformula(order = 3, apoe = FALSE)
+
+results_strat_models <- lapply(mbi_apoe_list, function(df) {
+  fit_model(form_strat, df, ziformula = ziform_strat)
+})
+
+# Interaction model 
+form_interaction <- as.formula(paste(
+  "mbiSTotal ~ poly(AgeC, 3)*SCI3.3*APOEbin +", covars, "+", random_effect
+))
+ziform_interaction <- as.formula(paste(
+  "~ poly(AgeC, 3)*SCI3.3*APOEbin +", covars
+))
+
+results_int <- fit_model(form_interaction, mbi, ziformula = ziform_interaction)
+
+
+# Compare the interaction model with the no interaction model 
+
+AIC(results_int$model, results_zi_cub_full$model)
+
+# Use the interaction term model for plotting 
+
+write_list <- list(
+  results_nb_quad = results_nb_quad,
+  results_nb_cub = results_nb_cub,
+  results_zi_cub_min = results_zi_cub_min,
+  results_zi_cub_full = results_zi_cub_full,
+  strat_models = strat_models,
+  results_int = results_int
+)
+
+lapply(names(write_list), function(name) {
+  saveRDS(write_list[[name]], file = paste0("./Outputs/", name, "_self.rds"))
+})
+
+
+##### EXPLORATORY ANALYSIS #####
+###############################
+
+# Use the final model (i.e., zi with cubic term) from above 
+
+# AGE >=65
+
+mbi65 <- mbi %>% filter(AgeBL >=65)
+
+
+results_zi_cub_full_65 <- fit_model(make_formula(order = 3, apoe = TRUE), mbi65, ziformula =  make_ziformula(order = 3, apoe = TRUE))
+
+# Stratified by APOE 
+mbi65_apoe_list <- list(
+  apoe0 = mbi65 %>% filter(APOEbin == 0),
+  apoe1 = mbi65 %>% filter(APOEbin == 1)
+)
+
+strat_models_cub_full_65 <- lapply(mbi65_apoe_list, function(df) {
+  fit_model(make_formula(order = 3, apoe = FALSE), df, ziformula = make_ziformula(order = 3, apoe = FALSE))
+})
+
+# Interaction model 
+
+results_int_65 <- fit_model(form_interaction, mbi65, ziformula = ziform_interaction)
+
+# Write out results
+
+write_list <- list(
+  results_zi_cub_full_65 = results_zi_cub_full_65,
+  strat_models_cub_full_65 = strat_models_cub_full_65,
+  results_int_65 = results_int_65
+)
+
+lapply(names(write_list), function(name) {
+  saveRDS(write_list[[name]], file = paste0("./Outputs/", name, "_self.rds"))
+})
+
+# SCI 3.6
+
+# Fit models 
+
+results_zi_cub_full_sci3.6 <- fit_model(make_formula(order = 3,sci_var = "SCI3.6", apoe = TRUE), mbi, ziformula =  make_ziformula(order = 3,sci_var = "SCI3.6", apoe = TRUE))
+
+form_strat_sci3.6 <- make_formula(order = 3, sci_var = "SCI3.6", apoe = FALSE)
+ziform_strat <- make_ziformula(order = 3, apoe = FALSE)
+
+strat_models_sci3.6 <- lapply(mbi_apoe_list, function(df) {
+  fit_model(form_strat_sci3.6, df, ziformula = ziform_strat)
+})
+
+# Interaction model 
+form_interaction_sci3.6 <- as.formula(paste(
+  "mbiSTotal ~ poly(AgeC, 3)*SCI3.6*APOEbin +", covars, "+", random_effect
+))
+
+results_int_sci3.6 <- fit_model(form_interaction_sci3.6, mbi, ziformula = ziform_cub)
+
+# Write out results
+
+write_list <- list(
+  results_zi_cub_full_sci3.6 = results_zi_cub_full_sci3.6,
+  strat_models_sci3.6 = strat_models_sci3.6,
+  results_int_sci3.6 = results_int_sci3.6
+)
+
+lapply(names(write_list), function(name) {
+  saveRDS(write_list[[name]], file = paste0("./Outputs/", name, "_self.rds"))
+})
+
+
+# MBI DOMAINS
+
+domain_list <- paste0("mbiSTotD", 1:5)
+
+# Create a named list to store results
+results_domains_self <- lapply(domain_list, function(outcome_var) {
+  # Build formulas for each outcome
+  form <- make_formula(order = 3, sci_var = "SCI3.3", outcome = outcome_var)
+  ziform <- make_ziformula(order = 3, sci_var = "SCI3.3")
+  
+  # Fit model and return results
+  fit_model(formula = form, mbi = mbi, ziformula = ziform)
+})
+
+# models did not converge for domains 4 and 5, so simplify by setting ZI term to constant
+
+results_domains_self_min <- lapply(domain_list, function(outcome_var) {
+                         # Build formulas for each outcome
+                         form <- make_formula(order = 3, sci_var = "SCI3.3", outcome = outcome_var)
+                         ziform <- make_ziformula(order = 3, sci_var = "SCI3.3")
+                         # Fit model and return results
+                         fit_model(formula = form, mbi = mbi, ziformula = ~1)
+                        })    
+
+# Name the list by outcome
+names(results_domains_self_min) <- domain_list
+
+# Use the interaction term model for plotting 
+
+saveRDS(results_domains_self_min, "./Outputs/results_domains_min_self.rds")
+

@@ -1,0 +1,10 @@
+# Ignore data files
+Data/
+Paper/
+
+
+# Ignore RStudio files
+.Rhistory
+.RData
+.Rproj.user/
+.RDataTmp*
